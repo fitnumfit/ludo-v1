@@ -104,34 +104,52 @@ export default function LudoGame() {
       return;
     }
 
-    // Check Collision
+    // Check Collision & Blocking
     const newCoords = getCoords(currentPlayer, newPos);
     let newPositions = { ...positions, [currentPlayer]: newPos };
     let collided = false;
+
+    // Quick safe check logic (redefined here for scope)
+    const isSafeSpot = (c: { x: number, y: number }) => {
+      const safes = [
+        { x: 1, y: 6 }, { x: 8, y: 1 }, { x: 13, y: 8 }, { x: 6, y: 13 }, // Starts
+        { x: 2, y: 8 }, { x: 6, y: 2 }, { x: 12, y: 6 }, { x: 8, y: 12 }  // Stars
+      ];
+      return safes.some(s => s.x === c.x && s.y === c.y);
+    };
+
+    const isSafe = isSafeSpot(newCoords);
 
     // Check against other active players
     for (const p of players) {
       if (p === currentPlayer) continue;
       const pPos = positions[p];
-      if (pPos === -1 || pPos === WIN_POSITION) continue; // Safe
+      if (pPos === -1 || pPos === WIN_POSITION) continue;
 
       const pCoords = getCoords(p, pPos);
       if (pCoords.x === newCoords.x && pCoords.y === newCoords.y) {
-        // Collision!
-        newPositions[p] = -1;
-        playKillSound();
-        collided = true;
+
+        // Safe Spot Rule: No cutting on safe spots
+        if (!isSafe) {
+          // Collision!
+          newPositions[p] = -1;
+          playKillSound();
+          collided = true;
+        }
       }
     }
 
     setPositions(newPositions);
 
-    // Rule: If 6 rolled, roll again?
-    // Simplified: If 6, roll again.
-    if (dice !== 6) {
-      nextTurn();
+    // Rule: Extra turn if 6 OR if Collided (Cut)
+    // If consecutiveSixes is < 3 (already checked)
+    const extraTurn = (dice === 6) || collided;
+
+    if (extraTurn) {
+      setDice(null); // Roll again
+      // Note: consecutiveSixes state updates in handleRoll, so it persists for next roll
     } else {
-      setDice(null); // Allow rolling again immediately
+      nextTurn();
     }
   };
 
@@ -162,10 +180,10 @@ export default function LudoGame() {
       )}
 
       {/* Game Layout */}
-      <div className="flex flex-col lg:flex-row gap-6 items-center max-w-6xl w-full h-full justify-center">
+      <div className="flex flex-col lg:flex-row gap-8 items-center max-w-7xl w-full h-full justify-center">
 
         {/* Top/Left Player Info */}
-        <div className="flex lg:flex-col gap-2 w-full lg:w-48 justify-center min-w-[200px]">
+        <div className="flex lg:flex-col gap-4 w-full lg:w-48 justify-center min-w-[200px]">
           {players.map((p) => (
             <PlayerCard
               key={p}
@@ -183,9 +201,10 @@ export default function LudoGame() {
           ))}
         </div>
 
-        {/* Board */}
-        <div className="relative flex-shrink-0">
-          <div className="aspect-square w-[90vw] max-w-[500px] lg:max-w-[600px] bg-white border-[8px] md:border-[12px] border-slate-800 rounded-xl shadow-2xl grid grid-cols-15 grid-rows-15 overflow-hidden">
+        {/* Board Container */}
+        <div className="relative flex-shrink-0 shadow-[0_0_50px_rgba(0,0,0,0.5)] rounded-lg">
+          {/* Board Grid */}
+          <div className="aspect-square w-[90vw] max-w-[500px] lg:max-w-[600px] bg-white border-4 border-black grid grid-cols-15 grid-rows-15 relative">
             {Array.from({ length: BOARD_SIZE * BOARD_SIZE }).map((_, i) => (
               <Cell
                 key={i}
@@ -197,40 +216,50 @@ export default function LudoGame() {
                 onMove={handleMove}
               />
             ))}
+
+            {/* Center Triangles Overlay */}
+            {/* Positioned at 6,6 (40% to 60%) */}
+            <div className="absolute pointer-events-none z-10" style={{ left: '40%', top: '40%', width: '20%', height: '20%' }}>
+              {/* Triangle Clip Paths */}
+              <div className="absolute inset-0 bg-yellow-400" style={{ clipPath: 'polygon(50% 50%, 100% 0, 100% 100%)' }}></div>
+              <div className="absolute inset-0 bg-green-500" style={{ clipPath: 'polygon(50% 50%, 0 0, 100% 0)' }}></div>
+              <div className="absolute inset-0 bg-red-600" style={{ clipPath: 'polygon(50% 50%, 0 0, 0 100%)' }}></div>
+              <div className="absolute inset-0 bg-blue-600" style={{ clipPath: 'polygon(50% 50%, 0 100%, 100% 100%)' }}></div>
+            </div>
           </div>
         </div>
 
         {/* Controls */}
         <div className="flex lg:flex-col items-center justify-center gap-6 w-full lg:w-48">
-          <div className="flex flex-col items-center">
-            <div className="text-xl font-bold bg-white px-4 py-1 rounded-full shadow-sm mb-4">
-              Current Turn
+          <div className="flex flex-col items-center p-6 bg-gray-800 rounded-2xl border border-gray-700 shadow-xl">
+            <div className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wide">
+              Turn
             </div>
+            <div className={`text-2xl font-black uppercase mb-6 drop-shadow-md
+                        ${currentPlayerColor === 'red' ? 'text-red-500' :
+                currentPlayerColor === 'green' ? 'text-green-500' :
+                  currentPlayerColor === 'yellow' ? 'text-yellow-400' :
+                    'text-blue-500'}
+                  `}>
+              {playerNames[currentPlayerColor]}
+            </div>
+
             <Dice
               value={dice}
               onClick={handleRoll}
               disabled={dice !== null || gameState !== 'PLAYING'}
-              colorClass={currentPlayerColor === 'red' ? 'border-red-500 text-red-500' :
-                currentPlayerColor === 'green' ? 'border-green-500 text-green-500' :
-                  currentPlayerColor === 'yellow' ? 'border-yellow-500 text-yellow-500' :
-                    'border-blue-500 text-blue-500'}
             />
-            <div className={`mt-4 text-xl font-black uppercase
-                        ${currentPlayerColor === 'red' ? 'text-red-500' :
-                currentPlayerColor === 'green' ? 'text-green-500' :
-                  currentPlayerColor === 'yellow' ? 'text-yellow-500' :
-                    'text-blue-500'}
-                  `}>
-              {playerNames[currentPlayerColor]}
+
+            <div className="mt-4 text-xs text-gray-500 font-mono">
+              {dice ? 'WAITING...' : 'ROLL DICE'}
             </div>
           </div>
 
           <button
             onClick={() => setGameState('SELECT')}
-            className="lg:mt-auto px-4 py-2 text-slate-400 font-semibold hover:text-red-500 hover:underline transition-colors"
-            title="Exit to Main Menu"
+            className="lg:mt-auto px-6 py-3 rounded-full bg-gray-800 text-gray-400 font-bold hover:bg-gray-700 hover:text-white transition-all border border-gray-700 shadow-lg"
           >
-            Exit Game
+            EXIT
           </button>
         </div>
       </div>
